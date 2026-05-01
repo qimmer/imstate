@@ -1,0 +1,57 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "cmake configure debug",
+      "type": "shell",
+      "command": "cmake -B build -DCMAKE_BUILD_TYPE=Debug",
+      "problemMatcher": []
+    },
+    {
+      "label": "cmake configure profile",
+      "type": "shell",
+      "command": "cmake -B build -DCMAKE_BUILD_TYPE=RelWithDebInfo",
+      "problemMatcher": []
+    },
+    {
+      "label": "cmake build debug",
+      "type": "shell",
+      "command": "cmake --build build --parallel",
+      "dependsOn": "cmake configure debug",
+      "problemMatcher": [],
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      }
+    },
+    {
+      "label": "cmake build profile",
+      "type": "shell",
+      "command": "cmake --build build --parallel",
+      "dependsOn": "cmake configure profile",
+      "problemMatcher": [],
+      "group": {
+        "kind": "build"
+      }
+    },
+    {
+      "label": "profile",
+      "type": "shell",
+      "command": "perf record -F 999 -g ${workspaceFolder}/build/raylib-game-template/raylib-game-template",
+      "options": {
+        "cwd": "${workspaceFolder}/build/raylib-game-template",
+      },
+      "dependsOn": "cmake build profile",
+      "problemMatcher": []
+    },
+    {
+      "label": "profile report",
+      "type": "shell",
+      "command": "perf report -i perf.data",
+      "options": {
+        "cwd": "${workspaceFolder}/build/raylib-game-template",
+      },
+      "problemMatcher": []
+    },
+  ]
+}

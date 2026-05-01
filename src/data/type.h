@@ -1,0 +1,8 @@
+typedef enum {
+  TYPE_BOOLEAN,
+  TYPE_NUMBER,
+  TYPE_VEC2,
+  TYPE_VEC3,
+
+  TYPE_COUNT
+} Type;
