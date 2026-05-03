@@ -13,13 +13,11 @@
 #include <stdio.h>
 #include <memory.h>
 
-
 #if DEBUG
 #   define flex_assert(e) assert(e)
 #else
 #   define flex_assert(e) ((void)0)
 #endif
-
 
 #define FlexTreatNanAsInf(n) (isnan(n) ? INFINITY : n)
 #define FlexFloatEquals(a, b) ((isnan(a) && isnan(b)) || a == b)
@@ -454,6 +452,7 @@ bool flex_canUseCache(FlexNodeRef node, FlexSize constrainedSize) {
 
 void flex_layoutInternal(FlexNodeRef node, FlexLayoutContext *context, FlexSize constrainedSize, FlexLayoutFlags flags, bool isRoot) {
     node->ascender = NAN;
+    int childCount = Flex_getChildrenCount(node);
 
     if (constrainedSize.width < 0) constrainedSize.width = 0;
     if (constrainedSize.height < 0) constrainedSize.height = 0;
@@ -504,7 +503,7 @@ void flex_layoutInternal(FlexNodeRef node, FlexLayoutContext *context, FlexSize 
     node->lastSize[FLEX_HEIGHT] = node->size[FLEX_HEIGHT];
 
     // measure non-container element
-    if (Flex_getChildrenCount(node) == 0) {
+    if (childCount == 0) {
         if (!FlexIsResolved(resolvedWidth) || !FlexIsResolved(resolvedHeight)) {
             FlexSize measuredSize = flex_measureNode(node, availableSize);
             
@@ -528,16 +527,16 @@ void flex_layoutInternal(FlexNodeRef node, FlexLayoutContext *context, FlexSize 
     size_t i, j;
     
     //  [flex items ----------->|<----------- fixed items]
-    FlexNodeRef* items = (FlexNodeRef*)malloc(sizeof(FlexNode) * Flex_getChildrenCount(node));
+    FlexNodeRef* items = (FlexNodeRef*)alloca(sizeof(FlexNodeRef) * childCount);
     int flexItemsCount = 0;
     int fixedItemsCount = 0;
     
-    for (i=0;i<Flex_getChildrenCount(node);i++) {
+    for (i=0;i<childCount;i++) {
         FlexNodeRef item = Flex_getChild(node, i);
         // resolve margin and padding for each items
         flex_resolveMarginAndPadding(item, context, resolvedInnerSize.width, node->direction);
         if (item->fixed) {
-            items[Flex_getChildrenCount(node) - ++fixedItemsCount] = item;
+            items[childCount - ++fixedItemsCount] = item;
         }
         else {
             items[flexItemsCount++] = item;
@@ -558,7 +557,7 @@ void flex_layoutInternal(FlexNodeRef node, FlexLayoutContext *context, FlexSize 
     FlexSize resolvedMarginSize = {resolvedMarginWidth, resolvedMarginHeight};
     FlexSize resolvedPaddingSize = {resolvedPaddingWidth, resolvedPaddingHeight};
     
-    FlexLine* lines = (FlexLine*)malloc(sizeof(FlexLine) * (flexItemsCount > 0 ? flexItemsCount : 1));
+    FlexLine* lines = (FlexLine*)alloca(sizeof(FlexLine) * (flexItemsCount > 0 ? flexItemsCount : 1));
     lines[0].itemsCount = 0;
     lines[0].itemsSize = 0;
     size_t linesCount = 1;
@@ -666,16 +665,14 @@ void flex_layoutInternal(FlexNodeRef node, FlexLayoutContext *context, FlexSize 
     
     if ((flags == FlexLayoutFlagMeasureWidth && mainAxis == FLEX_WIDTH)
         || (flags == FlexLayoutFlagMeasureHeight && mainAxis == FLEX_HEIGHT)) {
-        free(lines);
-        free(items);
         return;
     }
     
     float innerMainSize = node->result.size[mainAxis] - resolvedPaddingSize.size[mainAxis];
     
     // 6. Resolve the flexible lengths of all the flex items to find their used main size (see section 9.7.).
-    bool* isFrozen = (bool*)malloc(sizeof(bool) * flexItemsCount);
-    char* violations = (char*)malloc(sizeof(char) * flexItemsCount);
+    bool* isFrozen = (bool*)alloca(sizeof(bool) * flexItemsCount);
+    char* violations = (char*)alloca(sizeof(char) * flexItemsCount);
     size_t lineStart = 0;
     for (i=0;i<linesCount;i++) {
         size_t count = lines[i].itemsCount;
@@ -827,8 +824,6 @@ void flex_layoutInternal(FlexNodeRef node, FlexLayoutContext *context, FlexSize 
         }
         lineStart = lineEnd;
     }
-    free(isFrozen);
-    free(violations);
     
     ///////////////////////////////////////////////////////////////////////////
     //  Cross Size Determination
@@ -1105,8 +1100,6 @@ void flex_layoutInternal(FlexNodeRef node, FlexLayoutContext *context, FlexSize 
     }
     
     if (flags != FlexLayoutFlagLayout) {
-        free(lines);
-        free(items);
         return;
     }
     
@@ -1150,7 +1143,7 @@ void flex_layoutInternal(FlexNodeRef node, FlexLayoutContext *context, FlexSize 
     
     // layout fixed items
     for (i=0;i<fixedItemsCount;i++) {
-        FlexNodeRef item = items[Flex_getChildrenCount(node) - 1 - i];
+        FlexNodeRef item = items[childCount - 1 - i];
         
         FlexSize childConstrainedSize;
         childConstrainedSize.width = node->result.size[FLEX_WIDTH];
@@ -1203,7 +1196,7 @@ void flex_layoutInternal(FlexNodeRef node, FlexLayoutContext *context, FlexSize 
     }
     
     // pixel snapping
-    for (i=0;i<Flex_getChildrenCount(node);i++) {
+    for (i=0;i<childCount;i++) {
         FlexNodeRef item = items[i];
         float right = item->result.position[FLEX_LEFT] + item->result.size[FLEX_WIDTH];
         float bottom = item->result.position[FLEX_TOP] + item->result.size[FLEX_HEIGHT];
@@ -1212,9 +1205,6 @@ void flex_layoutInternal(FlexNodeRef node, FlexLayoutContext *context, FlexSize 
         item->result.size[FLEX_WIDTH] = FlexPixelRound(item->result.size[FLEX_WIDTH], context->scale);//FlexPixelRound(right - item->result.position[FLEX_LEFT], context->scale);
         item->result.size[FLEX_HEIGHT] = FlexPixelRound(item->result.size[FLEX_HEIGHT], context->scale);//FlexPixelRound(bottom - item->result.position[FLEX_TOP], context->scale);
     }
-    
-    free(items);
-    free(lines);
 }
 
 void flex_setupProperties(FlexNodeRef node) {
@@ -1230,12 +1220,12 @@ void flex_setupProperties(FlexNodeRef node) {
     flex_assert(node->justifyContent == FlexStart || node->justifyContent == FlexCenter || node->justifyContent == FlexEnd || node->justifyContent == FlexSpaceBetween || node->justifyContent == FlexSpaceAround);
     flex_assert(node->alignContent == FlexStretch || node->alignContent == FlexStart || node->alignContent == FlexCenter || node->alignContent == FlexEnd || node->alignContent == FlexSpaceBetween || node->alignContent == FlexSpaceAround);
     
-#if DEBUG
+/*#if DEBUG
     node->result.position[FLEX_LEFT] = NAN;
     node->result.position[FLEX_TOP] = NAN;
     node->result.size[FLEX_WIDTH] = NAN;
     node->result.size[FLEX_HEIGHT] = NAN;
-#endif
+#endif*/
     
     for (size_t i=0;i<Flex_getChildrenCount(node);i++) {
         FlexNodeRef item = Flex_getChild(node, i);

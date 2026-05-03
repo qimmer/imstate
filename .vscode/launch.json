@@ -13,5 +13,14 @@
       "cwd": "${workspaceFolder}/build/raylib-game-template",
       "preLaunchTask": "cmake build debug",
     },
+    {
+      "type": "lldb",
+      "request": "launch",
+      "name": "Profile",
+      "program": "${workspaceFolder}/build/raylib-game-template/raylib-game-template",
+      "args": [],
+      "cwd": "${workspaceFolder}/build/raylib-game-template",
+      "preLaunchTask": "cmake build profile",
+    },
   ]
 }

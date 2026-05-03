@@ -1,11 +1,14 @@
 #include "state.h"
 #include <assert.h>
+#include <limits.h>
 #include <stdbool.h>
 #include <stb_ds.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <threads.h>
+
+#include "utils/math.h"
 
 thread_local StateContext* g_context = NULL;
 
@@ -39,19 +42,20 @@ const char * GetIdName(StateId id) {
 
 static void BufferInit(StateBuffer* b, size_t initialArenaSize, size_t initialStateCount) {
   arrsetlen(b->arena, initialArenaSize);
-  arrsetcap(b->states, initialStateCount);
+  arrsetcap(b->stateArenaOffsets, initialStateCount);
   b->arena_offset = 0;
 }
 
 static void BufferFree(StateBuffer *b) {
-  arrfree(b->states);
+  arrfree(b->stateArenaOffsets);
   arrfree(b->arena);
 }
 
 static void BufferReset(StateBuffer* b) {
     b->arena_offset = 0;
-
-    arrsetlen(b->states, 0);
+    b->depth = 0;
+    b->stateCursorIndex = 0;
+    arrsetlen(b->stateArenaOffsets, 0);
 }
 
 static State* AllocState(StateBuffer* b, StateId id, size_t data_size) {
@@ -61,17 +65,16 @@ static State* AllocState(StateBuffer* b, StateId id, size_t data_size) {
       arrsetlen(b->arena, arrlen(b->arena) * 2);
     }
 
-    State* s = (State*)(b->arena + b->arena_offset);
+    size_t arenaOffset = b->arena_offset;
+    State* s = (State*)(b->arena + arenaOffset);
     b->arena_offset += total;
 
     s->id = id;
-    s->parent = NoStateIndex;
-    s->first_child = NoStateId;
-    s->child_count = 0;
+    s->parentId = NoStateId;
     s->data_size = data_size;
     s->onCleanup = NULL;
 
-    arrpush(b->states, s);
+    arrpush(b->stateArenaOffsets, arenaOffset);
     return s;
 }
 
@@ -83,15 +86,49 @@ static inline StateBuffer *GetCurrBuffer() {
   return &g_context->buffers[g_context->curr];
 }
 
-static State* FindPrevSibling(int parent, StateId id, int* out_index) {
+static inline State* GetState(StateBuffer* b, StateIndex index) {
+  return (State*)&b->arena[b->stateArenaOffsets[index]];
+}
+
+static inline State* FindPrevSibling(StateId parentId, StateId id, int depth, int* out_index) {
   StateBuffer *prev = GetPrevBuffer();
-  for (int i = 0; i < arrlen(prev->states); i++) {
-      State* s = prev->states[i];
-      if (s->parent == parent && s->id == id) {
-          if (out_index) *out_index = i;
-          return s;
+  int len = arrlen(prev->stateArenaOffsets);
+  int i1 = MIN(prev->stateCursorIndex, len - 1); // Iterates upwards
+  int i2 = prev->stateCursorIndex + 1; // Iterates downwards
+  int foundIndex = -1;
+  
+  while(foundIndex == -1 && (i1 >= 0 || i2 < len)) {
+    if(i1 >= 0) {
+      State* s1 = GetState(prev, i1);
+      // If we exit out of the parent descendant tree, don't expect more siblings
+      if(s1->depth < depth-1) {
+        i1 = -INT_MAX + 1;
+      } else if(s1->parentId == parentId && s1->id == id) {
+        foundIndex = i1;
+        break;
       }
+      --i1;
+    }
+    
+    if(i2 < len) {
+      State* s2 = GetState(prev, i2);
+      // If we exit out of the parent descendant tree, don't expect more siblings
+      if(s2->depth < depth-1) {
+        i2 = INT_MAX - 1;
+      } else if(s2->parentId == parentId && s2->id == id){
+        foundIndex = i2;
+        break;
+      }
+      ++i2;
+    }
   }
+
+  if(foundIndex >= 0) {
+    assert(foundIndex >= 0 && foundIndex < arrlen(prev->stateArenaOffsets));
+    prev->stateCursorIndex = foundIndex;
+    return GetState(prev, foundIndex);
+  }
+
   return NULL;
 }
 
@@ -101,7 +138,7 @@ void CreateStateContext(StateContext *stateContext, size_t initialArenaSize, siz
   BufferInit(&stateContext->buffers[0], initialArenaSize, initialStateCount);
   BufferInit(&stateContext->buffers[1], initialArenaSize, initialStateCount);
   stateContext->curr = 0;
-  stateContext->current_parent = NoStateId;  
+  stateContext->currentParentIndex = NoStateIndex;  
 }
 
 void DestroyStateContext(StateContext *stateContext) {
@@ -120,24 +157,25 @@ StateContext *GetStateContext() {
 
 void BeginFrame() {
   g_context->curr = 1 - g_context->curr;
-
+  
   BufferReset(GetCurrBuffer());
-
+  
   arrsetlen(g_context->stack, 0);
-  g_context->current_parent = NoStateId;
+  g_context->currentParentIndex = NoStateIndex;
 }
 
 void EndFrame() {
   StateBuffer *curr = GetCurrBuffer(), *prev = GetPrevBuffer();
+  assert(curr->depth == 0);
     
   // detect removals
-  for (int i = 0; i < arrlen(prev->states); i++) {
-    State* old = prev->states[i];
+  for (int i = 0; i < arrlen(prev->stateArenaOffsets); i++) {
+    State* old = GetState(prev, i);
 
     int found = 0;
-    for (int j = 0; j < arrlen(curr->states); j++) {
-      State* cur = curr->states[j];
-      if (cur->id == old->id && cur->parent == old->parent) {
+    for (int j = 0; j < arrlen(curr->stateArenaOffsets); j++) {
+      State* cur = GetState(curr, j);
+      if (cur->id == old->id && cur->parentId == old->parentId) {
         found = 1;
         break;
       }
@@ -151,28 +189,22 @@ void EndFrame() {
 
 bool _BeginState(StateId id, void **data, size_t size, StateConfig config) {
   StateBuffer *curr = GetCurrBuffer(), *prev = GetPrevBuffer();
-  int parent = g_context->current_parent;
-
+  StateIndex parentIndex = g_context->currentParentIndex;
+  
   // try fast path: same position
   State* s = AllocState(curr, id, size);
   assert(!!s);
   
-  State* previousState = FindPrevSibling(parent, id, NULL);
-  s->parent = parent;
+  State *p = GetState(curr, parentIndex);
+  State* previousState = FindPrevSibling(p->id, id, curr->depth, NULL);
+  s->parentId = p->id;
   s->onCleanup = config.onCleanup;
+  s->depth = curr->depth;
 
-  // attach to parent
-  if (parent != NoStateIndex) {
-      State* p = curr->states[parent];
-      if (p->child_count == 0) {
-          p->first_child = arrlen(curr->states) - 1;
-      }
-      p->child_count++;
-  }
-  
   // push stack
-  arrpush(g_context->stack, arrlen(curr->states) - 1);
-  g_context->current_parent = arrlen(curr->states) - 1;
+  arrpush(g_context->stack, arrlen(curr->stateArenaOffsets) - 1);
+  g_context->currentParentIndex = arrlen(curr->stateArenaOffsets) - 1;
+  curr->depth++;
 
   bool isInit = !previousState;
   bool isReinit = previousState && previousState->data_size != size;
@@ -203,19 +235,20 @@ bool _BeginState(StateId id, void **data, size_t size, StateConfig config) {
 
 void EndState(StateId id) {
   StateBuffer *curr = GetCurrBuffer();
-    if (arrlen(g_context->stack) <= 0) {
-      fprintf(stderr, "Stack underflow\n");
-      return;
-    }
+  if (arrlen(g_context->stack) <= 0) {
+    fprintf(stderr, "Stack underflow\n");
+    return;
+  }
 
-    int idx = arrpop(g_context->stack);
-    State* s = curr->states[idx];
+  StateIndex idx = arrpop(g_context->stack);
+  State* s = GetState(curr, idx);
+  curr->depth--;
 
-    if (s->id != id) {
-      fprintf(stderr, "Begin/End mismatch (%lu vs %lu)\n", s->id, id);
-    }
+  if (s->id != id) {
+    fprintf(stderr, "Begin/End mismatch (%lu vs %lu)\n", s->id, id);
+  }
 
-    g_context->current_parent = (arrlen(g_context->stack) > 0) ? g_context->stack[arrlen(g_context->stack) - 1] : NoStateId;
+  g_context->currentParentIndex = (arrlen(g_context->stack) > 0) ? g_context->stack[arrlen(g_context->stack) - 1] : NoStateId;
 }
 
 static uint64_t HashFnv1a(const void *data, size_t len) {
@@ -230,10 +263,11 @@ static uint64_t HashFnv1a(const void *data, size_t len) {
   return h;
 }
 
-uint64_t HashId(const char *s) { 
+StateId HashId(const char *s) { 
   uint64_t hash = HashFnv1a(s, strlen(s));
-  RegisterId(hash, s);
-  return hash;
+  StateId id = *((StateId*)&hash);
+  RegisterId(id, s);
+  return id;
 }
 
 void* FindNearestState(StateId id, int skip) {
@@ -241,7 +275,7 @@ void* FindNearestState(StateId id, int skip) {
 
   for (int i = arrlen(g_context->stack) - 1; i >= 0; i--) {
       int idx = g_context->stack[i];
-      State* s = curr->states[idx];
+      State* s = GetState(curr, idx);
 
       if (s->id == id) {
         if(skip <= 0) {
@@ -261,8 +295,8 @@ void AssertContext(void *ctx) {
     printf("Assertion failed requiring context. Current state stack:\n");
 
     for (int i = 0; i < arrlen(g_context->stack); ++i) {
-      int idx = g_context->stack[i];
-      State* s = curr->states[idx];
+      StateIndex idx = g_context->stack[i];
+      State* s = GetState(curr, idx);
 
       printf("/%s", GetIdName(s->id));
     }

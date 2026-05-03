@@ -10,15 +10,20 @@ typedef void (*OnCleanupCallback)(void *state);
 typedef void (*OnInitCallback)(void *state, const void *config);
 
 typedef uint64_t StateId;
-#define NoStateId ((StateId)UINT64_MAX)
+typedef int StateIndex;
+#define NoStateId UINT64_MAX
 #define NoStateIndex (-1)
+
+typedef struct {
+  int idx;
+  StateId id;
+} StateStackEntry;
 
 typedef struct State {
     StateId id;
+    int depth;
 
-    StateId parent;
-    StateId first_child;
-    int child_count;
+    StateId parentId;
 
     size_t data_size;
     OnCleanupCallback onCleanup;
@@ -31,8 +36,10 @@ typedef State* StatePtr;
 typedef struct {
     unsigned char* arena;
     size_t arena_offset;
+    int depth;
+    int stateCursorIndex;
 
-    StatePtr* states;
+    size_t* stateArenaOffsets;
 } StateBuffer;
 
 typedef struct {
@@ -47,16 +54,13 @@ typedef struct {
   const char * value;
 } StateIdRegistrationEntry;
 
-typedef struct {
-  int idx;
-  StateId id;
-} StateStackEntry;
 
 typedef struct {
   StateBuffer buffers[2];
   int curr;
-  StateId *stack;
-  int current_parent;
+  StateIndex *stack;
+  StateIndex currentParentIndex;
+  StateStackEntry **prevChildrenStack;
   StateIdRegistrationEntry *idNameMap;
 } StateContext;
 

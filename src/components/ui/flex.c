@@ -31,16 +31,23 @@ static void Cleanup(FlexState* state) {
 }
 
 void BeginFlexRoot(FlexRootConfig config) {
+  MakeId(Width);
+  MakeId(Height);
+
   BeginContext(FlexRootConfig, flexRootConfig, {.defaultState = &config});
     BeginContext(FlexState, flexState, { .onInit = (OnInitCallback)InitRoot, .onCleanup = (OnCleanupCallback)Cleanup });
       BeginInit(FlexState)
         Flex_setAlignItems(flexState->node, FlexStretch);
-        Flex_setJustifyContent(flexState->node, FlexStretch);
+        Flex_setJustifyContent(flexState->node, FlexSpaceAround);
         Flex_setDirection(flexState->node, FlexVertical);
       EndInit()
-      
-      Flex_setWidth(flexState->node, GetScreenWidth());
-      Flex_setHeight(flexState->node, GetScreenHeight());
+
+      BeginReactive(Width, int, GetScreenWidth());
+        Flex_setWidth(flexState->node, GetScreenWidth());
+      EndReactive(Width);
+      BeginReactive(Height, int, GetScreenWidth());
+        Flex_setHeight(flexState->node, GetScreenHeight());
+      EndReactive(Height);
 }
 
 void EndFlexRoot() {
@@ -64,12 +71,16 @@ void Flex(uint64_t id, FlexConfig config) {
 void BeginFlex(uint64_t id, FlexConfig config) {
   
   UseContext(FlexRootConfig, flexRootConfig);
-
   
   BeginId(id);
     BeginContext(FlexState, state, { .onInit = (OnInitCallback)InitChild, .onCleanup = (OnCleanupCallback)Cleanup});
-      Flex_setAlignItems(state->node, config.align);
-      Flex_setJustifyContent(state->node, config.justify);
+      int justify = config.justify ? config.justify : FlexStart;
+      int align = config.align ? config.align : FlexStart;
+
+      assert(justify != FlexStretch);
+
+      Flex_setAlignItems(state->node, align);
+      Flex_setJustifyContent(state->node, justify);
       Flex_setDirection(state->node, config.direction);
       Flex_setSpacing(state->node, config.gap);
       Flex_setMinWidth(state->node, config.minw);

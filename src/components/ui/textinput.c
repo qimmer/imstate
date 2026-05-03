@@ -182,7 +182,7 @@ void TextInput(uint64_t id, TextInputConfig config) {
   UseContext(Theme, theme);
   UseContext(ResourcesState, resources);
 
-  config.flex.justify = FlexStretch;
+  config.flex.justify = FlexSpaceAround;
   config.flex.align = FlexCenter;
   config.flex.direction = FlexHorizontal;
   config.flex.pl = theme->spacings[THEME_SPACING_S];

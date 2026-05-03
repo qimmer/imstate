@@ -43,7 +43,7 @@ void BeginWindow(uint64_t id, WindowConfig config) {
     BeginFlex(ContentContainer, (FlexConfig) {
       .direction = FlexVertical,
       .align = FlexStretch,
-      .justify = FlexStretch,
+      .justify = FlexSpaceBetween,
       .pl = padding,
       .pr = padding,
       .pt = padding,

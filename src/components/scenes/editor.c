@@ -39,7 +39,7 @@ void BeginEditor(uint64_t id, RenderTexture2D *viewportOut) {
     BeginFlex(EditorRoot, (FlexConfig){
       .direction = FlexVertical,
       .align = FlexStretch,
-      .justify = FlexStretch,
+      .justify = FlexSpaceBetween,
       .grow = 1
     });      
       BeginWindow(TopBar, (WindowConfig){
@@ -53,7 +53,7 @@ void BeginEditor(uint64_t id, RenderTexture2D *viewportOut) {
         .grow = 1,
         .direction = FlexHorizontal,
         .align = FlexStretch,
-        .justify = FlexStretch,
+        .justify = FlexSpaceBetween,
       });
         BeginWindow(LeftBar, (WindowConfig){
           .noPadding = true,
@@ -116,7 +116,7 @@ void EndEditor(uint64_t id) {
       BeginWindow(BottomBar, (WindowConfig){
         .noPadding = true,
         .flex = {
-          .h = theme->sizes[THEME_SIZE_S],
+          .h = theme->sizes[THEME_SIZE_M],
           .gap = theme->spacings[THEME_SPACING_XS],
           .pl = theme->spacings[THEME_SPACING_XS],
           .pr = theme->spacings[THEME_SPACING_XS],
