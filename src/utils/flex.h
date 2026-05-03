@@ -188,6 +188,7 @@ void        Flex_removeChild       (FlexNodeRef node, FlexNodeRef child);
 FlexNodeRef Flex_getChild          (FlexNodeRef node, size_t index);
 size_t      Flex_getChildrenCount  (FlexNodeRef node);
 void        Flex_layout            (FlexNodeRef node, float constrainedWidth, float constrainedHeight, float scale);
+void        flex_markDirty         (FlexNodeRef node);
 void        flex_printNode         (FlexNodeRef node, FlexPrintOptions options, int indent);
 
 

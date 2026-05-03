@@ -20,7 +20,7 @@
 #endif
 
 #define FlexTreatNanAsInf(n) (isnan(n) ? INFINITY : n)
-#define FlexFloatEquals(a, b) ((isnan(a) && isnan(b)) || a == b)
+#define FlexFloatEquals(a, b) ((isnan(a) && isnan(b)) || a == b )
 #define FlexLengthEquals(a, b) (FlexFloatEquals(a.value, b.value) && a.type == b.type)
 #define FlexPixelRound(value, scale) (roundf((value) * (scale)) / (scale))
 #define FlexIsResolved(n) !FlexIsUndefined(n)
@@ -194,6 +194,14 @@ typedef struct FlexNode {
     FlexSize lastConstrainedSize;
     FlexLength lastSize[2];
 
+    // dirty flag for skipping unchanged layouts
+    bool isDirty;
+
+    // top-level layout cache (root node only)
+    float lastLayoutWidth;
+    float lastLayoutHeight;
+    float lastLayoutScale;
+
 } FlexNode;
 
 
@@ -236,10 +244,17 @@ static const FlexNode defaultFlexNode = {
 
     .measuredSizeCache = NULL,
     .lastConstrainedSize = FlexCacheSizeUndefined,
+
+    .isDirty = true,
+    .lastLayoutWidth = NAN,
+    .lastLayoutHeight = NAN,
+    .lastLayoutScale = NAN,
 };
 
 
 void flex_markDirty(FlexNodeRef node) {
+    if (node->isDirty) return;
+    node->isDirty = true;
     node->lastConstrainedSize = FlexCacheSizeUndefined;
     if (node->parent) {
         flex_markDirty(node->parent);
@@ -493,14 +508,16 @@ void flex_layoutInternal(FlexNodeRef node, FlexLayoutContext *context, FlexSize 
     if (flex_canUseCache(node, availableSize)) {
         return;
     }
-    else if (flags == FlexLayoutFlagLayout) {
+    // Only populate cache on the first call after invalidation.
+    // Steps 3/7/11 call flex_layoutInternal on the same child with different
+    // temporary sizes, causing single-slot cache thrashing. By caching only
+    // the first call (step 3's measure), subsequent frames hit the cache for
+    // step 3 instead of always missing.
+    if (node->lastConstrainedSize.width == -1000.0f) {
         node->lastConstrainedSize = availableSize;
+        node->lastSize[FLEX_WIDTH] = node->size[FLEX_WIDTH];
+        node->lastSize[FLEX_HEIGHT] = node->size[FLEX_HEIGHT];
     }
-    else {
-        node->lastConstrainedSize = FlexCacheSizeUndefined;
-    }
-    node->lastSize[FLEX_WIDTH] = node->size[FLEX_WIDTH];
-    node->lastSize[FLEX_HEIGHT] = node->size[FLEX_HEIGHT];
 
     // measure non-container element
     if (childCount == 0) {
@@ -829,8 +846,15 @@ void flex_layoutInternal(FlexNodeRef node, FlexLayoutContext *context, FlexSize 
     //  Cross Size Determination
     
     // 7. Determine the hypothetical cross size of each item by performing layout with the used main size and the available space, treating auto as fit-content.
+    // Optimization: For single-line containers with definite cross size, step 8
+    // ignores individual item cross sizes (uses container's inner cross size instead).
+    // Stretched items will be fully laid out in step 11 anyway, so skip them here.
+    bool skipStretchedInStep7 = (flags == FlexLayoutFlagLayout) && !node->wrap && FlexIsResolved(resolvedSize.size[crossAxis]);
     for (i=0;i<flexItemsCount;i++) {
         FlexNodeRef item = items[i];
+        if (skipStretchedInStep7 && item->calculatedAlignSelf == FlexStretch && !flex_hasAutoMargin(item, crossAxis)) {
+            continue;
+        }
         FlexLength oldMainSize = item->size[mainAxis];
         item->size[mainAxis] = (FlexLength){item->result.size[mainAxis], FlexLengthTypePoint};
         flex_layoutInternal(item, context, availableSize, flags, false);
@@ -1208,6 +1232,7 @@ void flex_layoutInternal(FlexNodeRef node, FlexLayoutContext *context, FlexSize 
 }
 
 void flex_setupProperties(FlexNodeRef node) {
+    node->isDirty = false;
 //    flex_assert(node->size[FLEX_WIDTH].value >= 0);
 //    flex_assert(node->size[FLEX_HEIGHT].value >= 0);
 //    flex_assert(node->minSize[FLEX_WIDTH].value >= 0);
@@ -1252,9 +1277,17 @@ void flex_setupProperties(FlexNodeRef node) {
 }
 
 void Flex_layout(FlexNodeRef node, float constrainedWidth, float constrainedHeight, float scale) {
+    // Skip layout entirely if nothing changed and constraints are the same
+    if (!node->isDirty
+        && FlexFloatEquals(node->lastLayoutWidth, constrainedWidth)
+        && FlexFloatEquals(node->lastLayoutHeight, constrainedHeight)
+        && node->lastLayoutScale == scale) {
+        return;
+    }
+
     FlexLayoutContext context;
     context.scale = scale;
-    
+
     flex_setupProperties(node);
     flex_resolveMarginAndPadding(node, &context, constrainedWidth, FlexVertical);
     node->result.margin[FLEX_LEFT] = FlexIsResolved(node->resolvedMargin[FLEX_LEFT]) ? FlexPixelRound(node->resolvedMargin[FLEX_LEFT], scale) : 0;
@@ -1269,6 +1302,10 @@ void Flex_layout(FlexNodeRef node, float constrainedWidth, float constrainedHeig
     node->result.position[FLEX_TOP] = node->result.margin[FLEX_TOP];
     node->result.size[FLEX_WIDTH] = FlexPixelRound(node->result.size[FLEX_WIDTH], scale);
     node->result.size[FLEX_HEIGHT] = FlexPixelRound(node->result.size[FLEX_HEIGHT], scale);
+
+    node->lastLayoutWidth = constrainedWidth;
+    node->lastLayoutHeight = constrainedHeight;
+    node->lastLayoutScale = scale;
 }
 
 FlexNodeRef Flex_newNode() {

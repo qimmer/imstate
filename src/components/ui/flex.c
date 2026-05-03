@@ -13,7 +13,7 @@ typedef struct {
 } FlexState;
 
 static void InitChild(FlexState *state) {
-  UseContextSkip(FlexState, parentState, 1);
+  UseContext(FlexState, parentState);
   AssertContext(parentState);
 
   state->node = Flex_newNode();

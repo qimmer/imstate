@@ -19,7 +19,7 @@ Rectangle _Text(uint64_t id, const char *contents, TextConfig config) {
   Vector2 textSize = MeasureTextEx(font, contents, fontSize, spacing);
   Color color = theme->colors[config.themeColor];
 
-  config.flex.minw = MAX(config.flex.minw, textSize.x);
+  config.flex.minw = MAX( config.flex.minw, textSize.x);
   config.flex.minh = MAX(config.flex.minh, textSize.y);
 
   BeginFlex(id, config.flex);    

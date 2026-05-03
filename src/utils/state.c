@@ -167,13 +167,31 @@ void BeginFrame() {
 void EndFrame() {
   StateBuffer *curr = GetCurrBuffer(), *prev = GetPrevBuffer();
   assert(curr->depth == 0);
-    
-  // detect removals
-  for (int i = 0; i < arrlen(prev->stateArenaOffsets); i++) {
+
+  int prevLen = arrlen(prev->stateArenaOffsets);
+  int currLen = arrlen(curr->stateArenaOffsets);
+
+  // Fast path: if same count and same order, no removals occurred.
+  // This avoids the O(n^2) scan that dominates frame time with many states.
+  if (prevLen == currLen) {
+    bool allMatch = true;
+    for (int i = 0; i < prevLen; i++) {
+      State* old = GetState(prev, i);
+      State* cur = GetState(curr, i);
+      if (old->id != cur->id || old->parentId != cur->parentId) {
+        allMatch = false;
+        break;
+      }
+    }
+    if (allMatch) return;
+  }
+
+  // Slow path: detect removals (only runs when UI structure actually changed)
+  for (int i = 0; i < prevLen; i++) {
     State* old = GetState(prev, i);
 
     int found = 0;
-    for (int j = 0; j < arrlen(curr->stateArenaOffsets); j++) {
+    for (int j = 0; j < currLen; j++) {
       State* cur = GetState(curr, j);
       if (cur->id == old->id && cur->parentId == old->parentId) {
         found = 1;
@@ -286,6 +304,45 @@ void* FindNearestState(StateId id, int skip) {
       }
   }
   return NULL;
+}
+
+int GetContextIndex(StateId contextId) {
+  int numContexts = arrlen(g_context->contextInfos);
+
+  for(int i = 0; i < numContexts; ++i) {
+    if(g_context->contextInfos[i].id == contextId) {
+      return i;
+    }
+  }
+
+  ContextInfo info = (ContextInfo) {
+    .id = contextId,
+    .name = GetIdName(contextId)
+  };
+
+  arrpush(g_context->contextInfos, info);
+
+  return numContexts;
+}
+
+void* GetContextFromIndex(int contextIndex, int skip) {
+  StatePtr *stack = g_context->contextInfos[contextIndex].stack;
+  int len = arrlen(stack);
+  int level = len - 1 - skip;
+
+  if(level < 0 || level >= len) {
+    return NULL;
+  }
+
+  return stack[level];
+}
+
+void PopContext(int contextIndex) {
+  arrpop(g_context->contextInfos[contextIndex].stack);
+}
+
+void PushContext(int contextIndex, StatePtr state) {
+  arrpush(g_context->contextInfos[contextIndex].stack, state);
 }
 
 void AssertContext(void *ctx) {

@@ -25,32 +25,34 @@ static void InitGame(GameScreenState *s) {
 
 void BeginGame(uint64_t id, GameConfig config) {
   UseContext(ResourcesState, resources);
-  BeginState(id, GameScreenState, state, {.onInit = (OnInitCallback)InitGame});
-    state->config = config;
-    if(config.target.id) {
-      BeginTextureMode(config.target);
-    }
-    ClearBackground(RED);
+  BeginId(id);
+    BeginContext(GameScreenState, state, {.onInit = (OnInitCallback)InitGame});
+      state->config = config;
+      if(config.target.id) {
+        BeginTextureMode(config.target);
+      }
+      ClearBackground(RED);
 
-    BeginMode3D(state->camera);
-        Cubes(HashId("cubes"));
+      BeginMode3D(state->camera);
+          Cubes(HashId("cubes"));
     
 }
 
 void EndGame(uint64_t id) {
   UseContext(ResourcesState, resources);
-  UseState(id, GameScreenState, state);
-    EndMode3D();
+  UseContext(GameScreenState, state);
+      EndMode3D();
 
-    if(state->config.target.id) {
-      EndTextureMode();
-    }
-
-    if(IsHovering()) {
-      if (IsKeyPressed(KEY_ENTER) || IsGestureDetected(GESTURE_TAP)) {
-          PlaySound(resources->sounds[SOUND_FX_COIN]);
+      if(state->config.target.id) {
+        EndTextureMode();
       }
-    }
-    
-  EndState(id);
+
+      if(IsHovering()) {
+        if (IsKeyPressed(KEY_ENTER) || IsGestureDetected(GESTURE_TAP)) {
+            PlaySound(resources->sounds[SOUND_FX_COIN]);
+        }
+      }
+      
+    EndContext(GameScreenState, state);
+  EndId(id);
 }

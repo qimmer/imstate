@@ -35,52 +35,53 @@ void BeginEditor(uint64_t id, RenderTexture2D *viewportOut) {
 
   UseContext(Theme, theme);
 
-  BeginState(id, EditorState, state, { .onInit = (OnInitCallback)Init, .onCleanup = (OnCleanupCallback)Cleanup });
-    BeginFlex(EditorRoot, (FlexConfig){
-      .direction = FlexVertical,
-      .align = FlexStretch,
-      .justify = FlexSpaceBetween,
-      .grow = 1
-    });      
-      BeginWindow(TopBar, (WindowConfig){
-        .noPadding = true,
-        .flex = {
-          .h = theme->sizes[THEME_SIZE_M]
-        }
-      });
-      EndWindow(TopBar);
-      BeginFlex(CenterRegion, (FlexConfig){
-        .grow = 1,
-        .direction = FlexHorizontal,
+  BeginId(id);
+    BeginContext(EditorState, state, { .onInit = (OnInitCallback)Init, .onCleanup = (OnCleanupCallback)Cleanup });
+      BeginFlex(EditorRoot, (FlexConfig){
+        .direction = FlexVertical,
         .align = FlexStretch,
         .justify = FlexSpaceBetween,
-      });
-        BeginWindow(LeftBar, (WindowConfig){
+        .grow = 1
+      });      
+        BeginWindow(TopBar, (WindowConfig){
           .noPadding = true,
           .flex = {
-            .direction = FlexVertical,
-            .align = FlexStretch,
-            .w = theme->sizes[THEME_SIZE_2XL]
+            .h = theme->sizes[THEME_SIZE_M]
           }
         });
-          TextInput(Search, (TextInputConfig) {
-            .initialValue = "Hello",
+        EndWindow(TopBar);
+        BeginFlex(CenterRegion, (FlexConfig){
+          .grow = 1,
+          .direction = FlexHorizontal,
+          .align = FlexStretch,
+          .justify = FlexSpaceBetween,
+        });
+          BeginWindow(LeftBar, (WindowConfig){
+            .noPadding = true,
+            .flex = {
+              .direction = FlexVertical,
+              .align = FlexStretch,
+              .w = theme->sizes[THEME_SIZE_2XL]
+            }
           });
+            TextInput(Search, (TextInputConfig) {
+              .initialValue = "Hello",
+            });
 
-          StateTree(StateTreeId);
-        EndWindow(LeftBar);
+            StateTree(StateTreeId);
+          EndWindow(LeftBar);
 
-        BeginFlex(CenterWindow, (FlexConfig){
-          .grow = 1
-        });
-          Rectangle rect = GetFlexRect();
-          bool resized = state->gameBuffer.texture.width != rect.width || state->gameBuffer.texture.height != rect.height;
-          if(resized && rect.width > 16 && rect.height > 16) {
-            UnloadRenderTexture(state->gameBuffer);
-            state->gameBuffer = LoadRenderTexture(rect.width, rect.height);
-          }
+          BeginFlex(CenterWindow, (FlexConfig){
+            .grow = 1
+          });
+            Rectangle rect = GetFlexRect();
+            bool resized = state->gameBuffer.texture.width != rect.width || state->gameBuffer.texture.height != rect.height;
+            if(resized && rect.width > 16 && rect.height > 16) {
+              UnloadRenderTexture(state->gameBuffer);
+              state->gameBuffer = LoadRenderTexture(rect.width, rect.height);
+            }
 
-          if(viewportOut) *viewportOut = state->gameBuffer;
+            if(viewportOut) *viewportOut = state->gameBuffer;
 }
 
 void EndEditor(uint64_t id) {
@@ -94,42 +95,43 @@ void EndEditor(uint64_t id) {
   MakeId(FrametimeText);
 
   UseContext(Theme, theme);
-  UseState(id, EditorState, state);
+  UseContext(EditorState, state);
 
-          Rectangle rect = GetFlexRect();
+            Rectangle rect = GetFlexRect();
 
-          DrawTextureRec(
-            state->gameBuffer.texture, 
-            (Rectangle){0, 0, rect.width, -rect.height}, // flip Y
-            (Vector2){rect.x, rect.y},
-            WHITE
-          );
-        EndFlex(CenterWindow);
+            DrawTextureRec(
+              state->gameBuffer.texture, 
+              (Rectangle){0, 0, rect.width, -rect.height}, // flip Y
+              (Vector2){rect.x, rect.y},
+              WHITE
+            );
+          EndFlex(CenterWindow);
 
-        BeginWindow(RightBar, (WindowConfig){
+          BeginWindow(RightBar, (WindowConfig){
+            .flex = {
+              .w = theme->sizes[THEME_SIZE_2XL]
+            }
+          });
+          EndWindow(RightBar);
+        EndFlex(CenterRegion);
+        BeginWindow(BottomBar, (WindowConfig){
+          .noPadding = true,
           .flex = {
-            .w = theme->sizes[THEME_SIZE_2XL]
+            .h = theme->sizes[THEME_SIZE_M],
+            .gap = theme->spacings[THEME_SPACING_XS],
+            .pl = theme->spacings[THEME_SPACING_XS],
+            .pr = theme->spacings[THEME_SPACING_XS],
+            .align = FlexCenter,
+            .direction = FlexHorizontal
           }
         });
-        EndWindow(RightBar);
-      EndFlex(CenterRegion);
-      BeginWindow(BottomBar, (WindowConfig){
-        .noPadding = true,
-        .flex = {
-          .h = theme->sizes[THEME_SIZE_M],
-          .gap = theme->spacings[THEME_SPACING_XS],
-          .pl = theme->spacings[THEME_SPACING_XS],
-          .pr = theme->spacings[THEME_SPACING_XS],
-          .align = FlexCenter,
-          .direction = FlexHorizontal
-        }
-      });
-        const char *fps = TextFormat("FPS: %d", GetFPS());
-        const char *frameTime = TextFormat("Frame Time: %.1fms", GetFrameTime() * 1000.0f);
-        Text(FpsText, fps, { .themeFontSize = THEME_FONTSIZE_M, .themeFont = THEME_FONT_MONO, .flex = { .w = theme->sizes[THEME_SIZE_L], .justify = FlexStart } });
-        Text(FrametimeText, frameTime, { .themeFontSize = THEME_FONTSIZE_M, .themeFont = THEME_FONT_MONO, .flex = { .w = theme->sizes[THEME_SIZE_L], .justify = FlexStart } });
+          const char *fps = TextFormat("FPS: %d", GetFPS());
+          const char *frameTime = TextFormat("Frame Time: %.1fms", GetFrameTime() * 1000.0f);
+          Text(FpsText, fps, { .themeFontSize = THEME_FONTSIZE_M, .themeFont = THEME_FONT_MONO, .flex = { .w = theme->sizes[THEME_SIZE_L], .justify = FlexStart } });
+          Text(FrametimeText, frameTime, { .themeFontSize = THEME_FONTSIZE_M, .themeFont = THEME_FONT_MONO, .flex = { .w = theme->sizes[THEME_SIZE_L], .justify = FlexStart } });
 
-      EndWindow(BottomBar);
-    EndFlex(EditorRoot);
-  EndState(id);
+        EndWindow(BottomBar);
+      EndFlex(EditorRoot);
+    EndContext(EditorState, state);
+  EndId(id);
 }

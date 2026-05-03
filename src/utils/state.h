@@ -54,6 +54,11 @@ typedef struct {
   const char * value;
 } StateIdRegistrationEntry;
 
+typedef struct {
+  StateId id;
+  const char *name;
+  StatePtr* stack;
+} ContextInfo;
 
 typedef struct {
   StateBuffer buffers[2];
@@ -62,12 +67,18 @@ typedef struct {
   StateIndex currentParentIndex;
   StateStackEntry **prevChildrenStack;
   StateIdRegistrationEntry *idNameMap;
+  ContextInfo *contextInfos;
 } StateContext;
 
 void CreateStateContext(StateContext *stateContext, size_t initialArenaSize, size_t initialStateCount);
 void DestroyStateContext(StateContext *stateContext);
 void SetStateContext(StateContext *stateContext);
 StateContext *GetStateContext();
+
+int GetContextIndex(StateId contextId);
+void* GetContextFromIndex(int contextIndex, int skip);
+void PopContext(int index);
+void PushContext(int index, StatePtr state);
 
 void BeginFrame();
 void EndFrame();
@@ -92,38 +103,43 @@ const char * GetIdName(StateId id);
 
 #define BeginContext(stateType, state, ...) \
   static StateId state##id;\
+  static int state##idx;\
   if(!state##id) {\
     state##id = HashId(#stateType);\
+    state##idx = GetContextIndex(state##id);\
   }\
   stateType *state = 0;\
-  bool _init##stateType = _BeginState(state##id, (void**)&state, sizeof(stateType), (StateConfig)__VA_ARGS__)
+  bool _init##stateType = _BeginState(state##id, (void**)&state, sizeof(stateType), (StateConfig)__VA_ARGS__);\
+  PushContext(state##idx, (void*)state)
 
 #define EndContext(stateType, state) \
-  static StateId state##id;\
-  if(!state##id) {\
-    state##id = HashId(#stateType);\
+  static StateId state##id2;\
+  static int state##idx2;\
+  if(!state##id2) {\
+    state##id2 = HashId(#stateType);\
+    state##idx2 = GetContextIndex(state##id2);\
   }\
-  EndState(state##id)
+  PopContext(state##idx2);\
+  EndState(state##id2)
 
 
 #define UseContext(type, name)\
   static StateId name##ctx;\
+  static int name##idx;\
   if(!name##ctx) {\
     name##ctx = HashId(#type);\
+    name##idx = GetContextIndex(name##ctx);\
   }\
-  type *name = FindNearestState(name##ctx, 0);
+  type *name = (type*)GetContextFromIndex(name##idx, 0);
 
 #define UseContextSkip(type, name, skip)\
-  static StateId name##id;\
-  if(!name##id) {\
-    name##id = HashId(#type);\
+  static StateId name##ctx;\
+  static int name##idx;\
+  if(!name##ctx) {\
+    name##ctx = HashId(#type);\
+    name##idx = GetContextIndex(name##ctx);\
   }\
-  type *name = FindNearestState(name##id, skip);
-
-
-#define UseState(id, stateType, state)\
-  stateType *state = FindNearestState(id, 0);
-
+  type *name = (type*)GetContextFromIndex(name##idx, skip);
 
 #define BeginInit(id) \
   if(_init##id) {
